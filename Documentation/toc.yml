@@ -3,8 +3,8 @@
   items:
   - name: Release Notes
     href: ReleaseNotes.md
-  - name: MRTK Package Contents
-    href: MRTK_PackageContents.md
+  - name: MRTK Packages
+    href: Packaging/MRTK_Packages.md
   - name: Updating from earlier versions
     href: Updating.md
   - name: Upgrading from HTK
@@ -13,8 +13,8 @@
     href: BuildAndDeploy.md
   - name: MRTK and Managed Code Stripping
     href: MRTK_and_managed_code_stripping.md
-  - name: NuGet Packages
-    href: MRTKNuGetPackage.md
+  - name: Using the Unity Package Manager
+    href: usingupm.md
   - name: MRTK configuration dialog
     href: MRTK_Configuration_Dialog.md
   - name: Getting started with MRTK and XR SDK
@@ -67,6 +67,8 @@
       href: CrossPlatform/UsingARFoundation.md
     - name: Configure MRTK for Leap Motion Hand Tracking
       href: CrossPlatform/LeapMotionMRTK.md
+    - name: Configure MRTK for Oculus Quest
+      href: CrossPlatform/OculusQuestMRTK.md
   - name: Detecting Platform Capabilities
     href: DetectingPlatformCapabilities.md
   - name: Diagnostics System

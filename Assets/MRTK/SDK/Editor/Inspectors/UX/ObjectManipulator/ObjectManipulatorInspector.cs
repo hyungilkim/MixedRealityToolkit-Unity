@@ -1,12 +1,9 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-using Microsoft.MixedReality.Toolkit.Experimental.Physics;
 using Microsoft.MixedReality.Toolkit.UI;
 using Microsoft.MixedReality.Toolkit.Utilities;
 using Microsoft.MixedReality.Toolkit.Utilities.Editor;
-using System;
-using System.Linq;
 using UnityEditor;
 using UnityEngine;
 
@@ -23,6 +20,7 @@ namespace Microsoft.MixedReality.Toolkit.Editor
         private SerializedProperty hostTransform;
         private SerializedProperty manipulationType;
         private SerializedProperty allowFarManipulation;
+        private SerializedProperty useForcesForNearManipulation;
 
         private SerializedProperty oneHandRotationModeNear;
         private SerializedProperty oneHandRotationModeFar;
@@ -31,7 +29,8 @@ namespace Microsoft.MixedReality.Toolkit.Editor
 
         private SerializedProperty releaseBehavior;
 
-        private SerializedProperty smoothingActive;
+        private SerializedProperty smoothingFar;
+        private SerializedProperty smoothingNear;
         private SerializedProperty moveLerpTime;
         private SerializedProperty rotateLerpTime;
         private SerializedProperty scaleLerpTime;
@@ -41,23 +40,13 @@ namespace Microsoft.MixedReality.Toolkit.Editor
         private SerializedProperty onHoverEntered;
         private SerializedProperty onHoverExited;
 
-        private SerializedProperty elasticTypes;
-        private SerializedProperty translationElasticConfigurationObject;
-        private SerializedProperty rotationElasticConfigurationObject;
-        private SerializedProperty scaleElasticConfigurationObject;
-        private SerializedProperty translationElasticExtent;
-        private SerializedProperty rotationElasticExtent;
-        private SerializedProperty scaleElasticExtent;
+        private SerializedProperty elasticsManager;
 
         bool oneHandedFoldout = true;
         bool twoHandedFoldout = true;
         bool constraintsFoldout = true;
         bool physicsFoldout = true;
         bool smoothingFoldout = true;
-        bool elasticsFoldout = true;
-        bool translationElasticFoldout = false;
-        bool rotationElasticFoldout = false;
-        bool scaleElasticFoldout = false;
         bool eventsFoldout = true;
 
         public void OnEnable()
@@ -76,27 +65,23 @@ namespace Microsoft.MixedReality.Toolkit.Editor
 
             // Physics
             releaseBehavior = serializedObject.FindProperty("releaseBehavior");
+            useForcesForNearManipulation = serializedObject.FindProperty("useForcesForNearManipulation");
 
             // Smoothing
-            smoothingActive = serializedObject.FindProperty("smoothingActive");
+            smoothingFar = serializedObject.FindProperty("smoothingFar");
+            smoothingNear = serializedObject.FindProperty("smoothingNear");
             moveLerpTime = serializedObject.FindProperty("moveLerpTime");
             rotateLerpTime = serializedObject.FindProperty("rotateLerpTime");
             scaleLerpTime = serializedObject.FindProperty("scaleLerpTime");
+
+            // Elastics
+            elasticsManager = serializedObject.FindProperty("elasticsManager");
 
             // Manipulation Events
             onManipulationStarted = serializedObject.FindProperty("onManipulationStarted");
             onManipulationEnded = serializedObject.FindProperty("onManipulationEnded");
             onHoverEntered = serializedObject.FindProperty("onHoverEntered");
             onHoverExited = serializedObject.FindProperty("onHoverExited");
-
-            // Elastic configuration (ScriptableObject)
-            translationElasticConfigurationObject = serializedObject.FindProperty("translationElasticConfigurationObject");
-            rotationElasticConfigurationObject = serializedObject.FindProperty("rotationElasticConfigurationObject");
-            scaleElasticConfigurationObject = serializedObject.FindProperty("scaleElasticConfigurationObject");
-            translationElasticExtent = serializedObject.FindProperty("translationElasticExtent");
-            rotationElasticExtent = serializedObject.FindProperty("rotationElasticExtent");
-            scaleElasticExtent = serializedObject.FindProperty("scaleElasticExtent");
-            elasticTypes = serializedObject.FindProperty("elasticTypes");
         }
 
         public override void OnInspectorGUI()
@@ -145,43 +130,7 @@ namespace Microsoft.MixedReality.Toolkit.Editor
             var rb = mh.HostTransform.GetComponent<Rigidbody>();
 
             EditorGUILayout.Space();
-            constraintsFoldout = EditorGUILayout.Foldout(constraintsFoldout, "Constraints", true);
-
-            if (constraintsFoldout)
-            {
-                if (EditorGUILayout.DropdownButton(new GUIContent("Add Constraint"), FocusType.Keyboard))
-                {
-                    // create the menu and add items to it
-                    GenericMenu menu = new GenericMenu();
-
-                    var type = typeof(TransformConstraint);
-                    var types = AppDomain.CurrentDomain.GetAssemblies()
-                        .SelectMany(s => s.GetLoadableTypes())
-                        .Where(p => type.IsAssignableFrom(p) && !p.IsAbstract);
-
-                    foreach (var derivedType in types)
-                    {
-                        menu.AddItem(new GUIContent(derivedType.Name), false, t => mh.gameObject.AddComponent((Type)t), derivedType);
-                    }
-
-                    menu.ShowAsContext();
-                }
-
-                var constraints = mh.GetComponents<TransformConstraint>();
-
-                foreach (var constraint in constraints)
-                {
-                    EditorGUILayout.BeginHorizontal();
-                    string constraintName = constraint.GetType().Name;
-                    EditorGUILayout.LabelField(constraintName);
-                    if (GUILayout.Button("Go to component"))
-                    {
-                        Highlighter.Highlight("Inspector", $"{ObjectNames.NicifyVariableName(constraintName)} (Script)");
-                        EditorGUIUtility.ExitGUI();
-                    }
-                    EditorGUILayout.EndHorizontal();
-                }
-            }
+            constraintsFoldout = InspectorUIUtility.DrawComponentTypeFoldout<TransformConstraint>(mh.gameObject, constraintsFoldout, "Constraint");
 
             EditorGUILayout.Space();
             physicsFoldout = EditorGUILayout.Foldout(physicsFoldout, "Physics", true);
@@ -191,6 +140,7 @@ namespace Microsoft.MixedReality.Toolkit.Editor
                 if (rb != null)
                 {
                     EditorGUILayout.PropertyField(releaseBehavior);
+                    EditorGUILayout.PropertyField(useForcesForNearManipulation);
                 }
                 else
                 {
@@ -203,49 +153,11 @@ namespace Microsoft.MixedReality.Toolkit.Editor
 
             if (smoothingFoldout)
             {
-                EditorGUILayout.PropertyField(smoothingActive);
+                EditorGUILayout.PropertyField(smoothingFar);
+                EditorGUILayout.PropertyField(smoothingNear);
                 EditorGUILayout.PropertyField(moveLerpTime);
                 EditorGUILayout.PropertyField(rotateLerpTime);
                 EditorGUILayout.PropertyField(scaleLerpTime);
-            }
-
-            EditorGUILayout.Space();
-            elasticsFoldout = EditorGUILayout.Foldout(elasticsFoldout, "Elastics", true);
-
-            if (elasticsFoldout)
-            {
-                // This two-way enum cast is required because EnumFlagsField does not play nicely with
-                // SerializedProperties and custom enum flags.
-                var newElasticTypesValue = EditorGUILayout.EnumFlagsField("Manipulation types using elastic feedback: ", (TransformFlags)elasticTypes.intValue);
-                elasticTypes.intValue = (int)(TransformFlags)newElasticTypesValue;
-
-                // If the particular elastic type is requested, we offer the user the ability
-                // to configure the elastic system.
-                TransformFlags currentFlags = (TransformFlags)elasticTypes.intValue;
-
-                translationElasticFoldout = DrawElasticConfiguration<ElasticConfiguration>(
-                    "Translation Elastic",
-                    translationElasticFoldout,
-                    translationElasticConfigurationObject,
-                    translationElasticExtent,
-                    TransformFlags.Move,
-                    currentFlags);
-
-                rotationElasticFoldout = DrawElasticConfiguration<ElasticConfiguration>(
-                    "Rotation Elastic",
-                    rotationElasticFoldout,
-                    rotationElasticConfigurationObject,
-                    rotationElasticExtent,
-                    TransformFlags.Rotate,
-                    currentFlags);
-
-                scaleElasticFoldout = DrawElasticConfiguration<ElasticConfiguration>(
-                    "Scale Elastic",
-                    scaleElasticFoldout,
-                    scaleElasticConfigurationObject,
-                    scaleElasticExtent,
-                    TransformFlags.Scale,
-                    currentFlags);
             }
 
             EditorGUILayout.Space();
@@ -259,37 +171,16 @@ namespace Microsoft.MixedReality.Toolkit.Editor
                 EditorGUILayout.PropertyField(onHoverExited);
             }
 
+            EditorGUILayout.Space();
+
+            Microsoft.MixedReality.Toolkit.Experimental.Editor.ElasticsManagerInspector.DrawElasticsManagerLink(elasticsManager, mh.gameObject);
+
+            EditorGUILayout.Space();
+
             // reset foldouts style
             style.fontStyle = previousStyle;
 
             serializedObject.ApplyModifiedProperties();
-        }
-
-        private bool DrawElasticConfiguration<T>(
-            string name,
-            bool expanded,
-            SerializedProperty elasticProperty,
-            SerializedProperty extentProperty,
-            TransformFlags requiredFlag,
-            TransformFlags providedFlags) where T : ElasticConfiguration
-        {
-            if (providedFlags.HasFlag(requiredFlag))
-            {
-                bool result = false;
-                using (new EditorGUI.IndentLevelScope())
-                {
-                    result = InspectorUIUtility.DrawScriptableFoldout<T>(
-                        elasticProperty,
-                        name,
-                        expanded);
-                    EditorGUILayout.PropertyField(extentProperty, includeChildren: true);
-                }
-                return result;
-            }
-            else
-            {
-                return false;
-            }
         }
     }
 }
