@@ -37,9 +37,9 @@ using static OVRSkeleton;
 #endif
 
 using Object = UnityEngine.Object;
-//using TeleportPointer = Microsoft.MixedReality.Toolkit.Teleport.TeleportPointer;
+using TeleportPointer = Microsoft.MixedReality.Toolkit.Teleport.TeleportPointer;
 
-namespace Microsoft.MixedReality.Toolkit.XRSDK.Oculus
+namespace Microsoft.MixedReality.Toolkit.XRSDK.Oculus.Input
 {
     /// <summary>
     /// Oculus Integration Asset package implementation of Oculus Quest articulated hands.
@@ -59,20 +59,14 @@ namespace Microsoft.MixedReality.Toolkit.XRSDK.Oculus
         private MixedRealityPose currentIndexPose = MixedRealityPose.ZeroIdentity;
         private MixedRealityPose currentGripPose = MixedRealityPose.ZeroIdentity;
 
-        /// <summary>
-        /// Teleport pointer reference. Needs custom pointer because MRTK does not support teleporting with articulated hands.
-        /// </summary>
-        public CustomTeleportPointer TeleportPointer { get; set; }
-
 #if OCULUSINTEGRATION_PRESENT
-        private Material handMaterial = null;
-        private Renderer handRenderer = null;
-
         private bool isIndexGrabbing = false;
         private bool isMiddleGrabbing = false;
         private bool isThumbGrabbing = false;
 #endif
-
+        
+        private OculusXRSDKDeviceManagerProfile settingsProfile;
+        private MixedRealityHandTrackingProfile handTrackingProfile;
         private int pinchStrengthProp;
 
 
@@ -82,7 +76,6 @@ namespace Microsoft.MixedReality.Toolkit.XRSDK.Oculus
         public OculusHand(TrackingState trackingState, Handedness controllerHandedness, IMixedRealityInputSource inputSource = null, MixedRealityInteractionMapping[] interactions = null)
             : base(trackingState, controllerHandedness, inputSource, interactions)
         {
-            pinchStrengthProp = Shader.PropertyToID(MRTKOculusConfig.Instance.PinchStrengthMaterialProperty);
             handDefinition = new ArticulatedHandDefinition(inputSource, controllerHandedness);
         }
 
@@ -112,32 +105,11 @@ namespace Microsoft.MixedReality.Toolkit.XRSDK.Oculus
         #endregion IMixedRealityHand Implementation
 
 #if OCULUSINTEGRATION_PRESENT
-        public void InitializeHand(OVRHand ovrHand, Material handMaterial)
+        public void InitializeHand(OVRHand ovrHand, OculusXRSDKDeviceManagerProfile deviceManagerSettings)
         {
-            handRenderer = ovrHand.GetComponent<Renderer>();
-            UpdateHandMaterial(handMaterial);
+            settingsProfile = deviceManagerSettings;
+            handTrackingProfile = CoreServices.InputSystem?.InputSystemProfile.HandTrackingProfile;
         }
-
-        public void UpdateHandMaterial(Material newHandMaterial)
-        {
-            if (newHandMaterial == null || !MRTKOculusConfig.Instance.UseCustomHandMaterial) return;
-
-            if (handMaterial != null)
-            {
-                Object.Destroy(handMaterial);
-            }
-            handMaterial = new Material(newHandMaterial);
-            handRenderer.sharedMaterial = handMaterial;
-        }
-
-        public void CleanupHand()
-        {
-            if (handRenderer != null)
-            {
-                handRenderer.enabled = false;
-            }
-        }
-
 
         public override bool IsInPointingPose
         {
@@ -166,9 +138,6 @@ namespace Microsoft.MixedReality.Toolkit.XRSDK.Oculus
         {
             get
             {
-#if LATER
-                if (MRTKOculusConfig.Instance.ActiveTeleportPointerMode == MRTKOculusConfig.TeleportPointerMode.None) return false;
-#endif
                 if (!TryGetJoint(TrackedHandJoint.Palm, out var palmPose)) return false;
 
                 Camera mainCamera = CameraCache.Main;
@@ -224,9 +193,7 @@ namespace Microsoft.MixedReality.Toolkit.XRSDK.Oculus
                 UpdateVelocity();
             }
 
-#if LATER
             UpdateTeleport(); 
-#endif
 
             for (int i = 0; i < Interactions?.Length; i++)
             {
@@ -283,14 +250,14 @@ namespace Microsoft.MixedReality.Toolkit.XRSDK.Oculus
             }
         }
 
-#if LATER
+        // Used to track the input that was last raised
+        private Vector2 previousStickInput = Vector2.zero;
+        private bool previousReadyToTeleport = false;
+
         private void UpdateTeleport()
         {
-            if (MRTKOculusConfig.Instance.ActiveTeleportPointerMode == MRTKOculusConfig.TeleportPointerMode.None) return;
-
             MixedRealityInputAction teleportAction = MixedRealityInputAction.None;
-
-            IMixedRealityTeleportPointer teleportPointer = TeleportPointer;
+            TeleportPointer teleportPointer = null;
 
             // Check if we're focus locked or near something interactive to avoid teleporting unintentionally.
             bool anyPointersLockedWithHand = false;
@@ -305,48 +272,47 @@ namespace Microsoft.MixedReality.Toolkit.XRSDK.Oculus
                 anyPointersLockedWithHand |= InputSource.Pointers[i].IsFocusLocked;
 
                 // If official teleport mode and we have a teleport pointer registered, we get the input action to trigger it.
-                if (MRTKOculusConfig.Instance.ActiveTeleportPointerMode == MRTKOculusConfig.TeleportPointerMode.Official
-                    && InputSource.Pointers[i] is IMixedRealityTeleportPointer)
+                if (InputSource.Pointers[i] is IMixedRealityTeleportPointer)
                 {
                     teleportPointer = (TeleportPointer)InputSource.Pointers[i];
-                    teleportAction = ((TeleportPointer)teleportPointer).TeleportInputAction;
+                    teleportAction = teleportPointer.TeleportInputAction;
                 }
             }
 
             // We close middle finger to signal spider-man gesture, and as being ready for teleport
             bool isReadyForTeleport = !anyPointersLockedWithHand && IsPositionAvailable && IsInTeleportPose;
 
-            // If not ready for teleport, we raise a cancellation event to prevent accidental teleportation.
-            if (!isReadyForTeleport && teleportPointer != null)
+            // Tracks the input vector that should be sent out based on the gesture that is made
+            Vector2 stickInput = (isReadyForTeleport && !isIndexGrabbing) ? Vector2.up : Vector2.zero;
+
+            // The teleport event needs to be canceled if we have not completed the teleport motion and we were previously ready to teleport, but for some reason we
+            // are no longer doing the ready to teleport gesture
+            bool teleportCanceled = previousReadyToTeleport && !isReadyForTeleport && !isIndexGrabbing;
+            if (teleportCanceled && teleportPointer != null)
             {
                 CoreServices.TeleportSystem?.RaiseTeleportCanceled(teleportPointer, null);
+                previousStickInput = stickInput;
+                previousReadyToTeleport = isReadyForTeleport;
+                return;
             }
 
-            Vector2 stickInput = isReadyForTeleport ? Vector2.up : Vector2.zero;
-
-            RaiseTeleportInput(isIndexGrabbing ? Vector2.zero : stickInput, teleportAction, isReadyForTeleport);
-        }
-
-        private void RaiseTeleportInput(Vector2 teleportInput, MixedRealityInputAction teleportAction, bool isReadyForTeleport)
-        {
-            switch (MRTKOculusConfig.Instance.ActiveTeleportPointerMode)
+            bool teleportInputChanged = stickInput != previousStickInput;
+            if (teleportInputChanged)
             {
-                case MRTKOculusConfig.TeleportPointerMode.Custom:
-                    if (TeleportPointer == null) return;
-                    TeleportPointer.gameObject.SetActive(IsPositionAvailable);
-                    TeleportPointer.transform.position = currentPointerPose.Position;
-                    TeleportPointer.transform.rotation = currentPointerPose.Rotation;
-                    TeleportPointer.UpdatePointer(isReadyForTeleport, teleportInput);
-                    break;
-                case MRTKOculusConfig.TeleportPointerMode.Official:
-                    if (teleportAction.Equals(MixedRealityInputAction.None)) return;
-                    CoreServices.InputSystem?.RaisePositionInputChanged(InputSource, ControllerHandedness, teleportAction, teleportInput);
-                    break;
-                default:
-                    return;
+                RaiseTeleportInput(stickInput, teleportAction);
+            }
+
+            previousStickInput = stickInput;
+            previousReadyToTeleport = isReadyForTeleport;
+        }
+
+        private void RaiseTeleportInput(Vector2 teleportInput, MixedRealityInputAction teleportAction)
+        {
+            if (!teleportAction.Equals(MixedRealityInputAction.None))
+            {
+                CoreServices.InputSystem?.RaisePositionInputChanged(InputSource, ControllerHandedness, teleportAction, teleportInput);
             }
         }
-#endif
 
                 #region HandJoints
         protected readonly Dictionary<BoneId, TrackedHandJoint> boneJointMapping = new Dictionary<BoneId, TrackedHandJoint>()
@@ -384,15 +350,15 @@ namespace Microsoft.MixedReality.Toolkit.XRSDK.Oculus
             }
             if (ovrHand.HandConfidence == OVRHand.TrackingConfidence.Low)
             {
-                if (MRTKOculusConfig.Instance.MinimumHandConfidence == OVRHand.TrackingConfidence.High)
+                if (settingsProfile.MinimumHandConfidence == OVRHand.TrackingConfidence.High)
                 {
                     isTracked = false;
                 }
                 else
                 {
                     float lowConfidenceTime = Time.time - _lastHighConfidenceTime;
-                    if (MRTKOculusConfig.Instance.LowConfidenceTimeThreshold > 0 &&
-                        MRTKOculusConfig.Instance.LowConfidenceTimeThreshold < lowConfidenceTime)
+                    if (settingsProfile.LowConfidenceTimeThreshold > 0 &&
+                        settingsProfile.LowConfidenceTimeThreshold < lowConfidenceTime)
                     {
                         isTracked = false;
                     }
@@ -401,17 +367,11 @@ namespace Microsoft.MixedReality.Toolkit.XRSDK.Oculus
 
             if (ControllerHandedness == Handedness.Left)
             {
-                MRTKOculusConfig.Instance.CurrentLeftHandTrackingConfidence = ovrHand.HandConfidence;
+                settingsProfile.CurrentLeftHandTrackingConfidence = ovrHand.HandConfidence;
             }
             else
             {
-                MRTKOculusConfig.Instance.CurrentRightHandTrackingConfidence = ovrHand.HandConfidence;
-            }
-
-            // Disable hand if not tracked
-            if (handRenderer != null)
-            {
-                handRenderer.enabled = isTracked;
+                settingsProfile.CurrentRightHandTrackingConfidence = ovrHand.HandConfidence;
             }
 
             if (ovrSkeleton != null)
@@ -429,25 +389,22 @@ namespace Microsoft.MixedReality.Toolkit.XRSDK.Oculus
 
             // Note: After some testing, it seems when moving your hand fast, Oculus's pinch estimation data gets frozen, which leads to stuck pinches.
             // To counter this, we perform a distance check between thumb and index to determine if we should force the pinch to a false state.
-            float pinchStrength;
-            if (AreIndexAndThumbFarApart())
+            float pinchStrength = HandPoseUtils.CalculateIndexPinch(ControllerHandedness);
+            if (pinchStrength == 0.0f)
             {
-                pinchStrength = 0f;
                 IsPinching = false;
             }
             else
             {
-                pinchStrength = ovrHand.GetFingerPinchStrength(OVRHand.HandFinger.Index);
                 if (IsPinching)
                 {
                     // If we are already pinching, we make the pinch a bit sticky
-                    IsPinching = ovrHand.GetFingerPinchStrength(OVRHand.HandFinger.Index) > 0.85f;
+                    IsPinching = pinchStrength > 0.85f;
                 }
                 else
                 {
                     // If not yet pinching, only consider pinching if finger confidence is high
-                    IsPinching = ovrHand.GetFingerIsPinching(OVRHand.HandFinger.Index)
-                                 && ovrHand.GetFingerConfidence(OVRHand.HandFinger.Index) == OVRHand.TrackingConfidence.High;
+                    IsPinching = pinchStrength > 0.5f && ovrHand.GetFingerConfidence(OVRHand.HandFinger.Index) == OVRHand.TrackingConfidence.High;
                 }
             }
 
@@ -455,11 +412,6 @@ namespace Microsoft.MixedReality.Toolkit.XRSDK.Oculus
             isMiddleGrabbing = HandPoseUtils.IsMiddleGrabbing(ControllerHandedness);
             isThumbGrabbing = HandPoseUtils.IsThumbGrabbing(ControllerHandedness);
 
-            // Hand Curl Properties: 
-            float indexFingerCurl = HandPoseUtils.IndexFingerCurl(ControllerHandedness);
-            float middleFingerCurl = HandPoseUtils.MiddleFingerCurl(ControllerHandedness);
-            float ringFingerCurl = HandPoseUtils.RingFingerCurl(ControllerHandedness);
-            float pinkyFingerCurl = HandPoseUtils.PinkyFingerCurl(ControllerHandedness);
 
             // Pinch was also used as grab, we want to allow hand-curl grab not just pinch.
             // Determine pinch and grab separately
@@ -468,15 +420,6 @@ namespace Microsoft.MixedReality.Toolkit.XRSDK.Oculus
                 IsGrabbing = isIndexGrabbing && isMiddleGrabbing;
             }
 
-            if (MRTKOculusConfig.Instance.UpdateMaterialPinchStrengthValue && handMaterial != null)
-            {
-                float gripStrength = indexFingerCurl + middleFingerCurl + ringFingerCurl + pinkyFingerCurl;
-                gripStrength /= 4.0f;
-                gripStrength = gripStrength > 0.8f ? 1.0f : gripStrength;
-
-                pinchStrength = Mathf.Max(pinchStrength, gripStrength);
-                handMaterial.SetFloat(pinchStrengthProp, pinchStrength);
-            }
             return isTracked;
         }
 
@@ -484,7 +427,7 @@ namespace Microsoft.MixedReality.Toolkit.XRSDK.Oculus
         // 0.0016 is the square magnitude equivalent
         // Square magnitude is less expensive to perform than a distance check
         private const float IndexThumbSqrMagnitudeThreshold = 0.0016f;
-        private bool AreIndexAndThumbFarApart()
+        private float IndexThumbSqrMagnitude()
         {
             MixedRealityPose indexPose = MixedRealityPose.ZeroIdentity;
             TryGetJoint(TrackedHandJoint.IndexTip, out indexPose);
@@ -493,7 +436,7 @@ namespace Microsoft.MixedReality.Toolkit.XRSDK.Oculus
             TryGetJoint(TrackedHandJoint.ThumbTip, out thumbPose);
 
             Vector3 distanceVector = indexPose.Position - thumbPose.Position;
-            return distanceVector.sqrMagnitude > IndexThumbSqrMagnitudeThreshold;
+            return distanceVector.sqrMagnitude;
         }
 
         protected void UpdateBone(OVRBone bone)

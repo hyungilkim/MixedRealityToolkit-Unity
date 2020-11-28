@@ -514,6 +514,8 @@ namespace Microsoft.MixedReality.Toolkit.Input
         {
             if (!IsSetupValid) { return; }
 
+            base.Initialize();
+
             if (Application.isPlaying)
             {
                 Debug.Assert(uiRaycastCamera == null);
@@ -540,8 +542,11 @@ namespace Microsoft.MixedReality.Toolkit.Input
             {
                 primaryPointerSelector.Destroy();
             }
+            if (!MixedRealityToolkit.Instance.IsProfileSwitching)
+            {
+                CleanUpUiRaycastCamera();
+            }
 
-            CleanUpUiRaycastCamera();
             base.Destroy();
         }
 
@@ -553,6 +558,8 @@ namespace Microsoft.MixedReality.Toolkit.Input
             using (UpdatePerfMarker.Auto())
             {
                 if (!IsSetupValid) { return; }
+
+                base.Update();
 
                 UpdatePointers();
                 UpdateGazeProvider();
