@@ -1281,7 +1281,7 @@ namespace Microsoft.MixedReality.Toolkit.Tests
             Vector3 initialHandPosition = new Vector3(0, 0, 0f);
             // this is specific to scale handles
             Transform scaleHandle = boundsControl.gameObject.transform.Find("rigRoot/corner_3");
-            Transform proximityScaledVisual = scaleHandle.GetChild(0)?.GetChild(0);
+            Transform proximityScaledVisual = (scaleHandle.GetChild(0) != null) ? scaleHandle.GetChild(0).GetChild(0) : null;
             var frontRightCornerPos = scaleHandle.position; // front right corner is corner 
             Assert.IsNotNull(proximityScaledVisual, "Couldn't get visual gameobject for scale handle");
             Assert.IsTrue(proximityScaledVisual.name == "visuals", "scale visual has unexpected name");
@@ -1339,7 +1339,7 @@ namespace Microsoft.MixedReality.Toolkit.Tests
             ScaleHandlesConfiguration scaleHandleConfig = boundsControl.ScaleHandlesConfig;
             Vector3 defaultHandleSize = Vector3.one * scaleHandleConfig.HandleSize;
             Transform scaleHandle = boundsControl.gameObject.transform.Find("rigRoot/corner_3");
-            Transform proximityScaledVisual = scaleHandle.GetChild(0)?.GetChild(0);
+            Transform proximityScaledVisual = (scaleHandle.GetChild(0) != null) ? scaleHandle.GetChild(0).GetChild(0) : null;
             var frontRightCornerPos = scaleHandle.position;
             // check far scale applied
             ProximityEffectConfiguration proximityConfig = boundsControl.HandleProximityEffectConfig;
@@ -2504,6 +2504,45 @@ namespace Microsoft.MixedReality.Toolkit.Tests
             iss.ControllerSimulationMode = oldSimMode;
 
             yield return null;
+        }
+
+        /// <summary>
+        /// Test creating an new instance of a scriptable configuration and setting it.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator SetVisualConfiguration()
+        {
+            BoundsControl boundsControl = InstantiateSceneAndDefaultBoundsControl();
+
+            // Make sure the material on the object has not been applied 
+            Assert.AreNotEqual(GetBoxVisual(boundsControl).GetComponent<Renderer>().material.color, testMaterial.color);
+
+            // Create new scriptable
+            BoxDisplayConfiguration boxDisplayConfiguration = ScriptableObject.CreateInstance<BoxDisplayConfiguration>();
+            yield return null;
+
+            // Set the material property of the new scriptable
+            boxDisplayConfiguration.BoxMaterial = testMaterial;
+            yield return null;
+
+            // Set new scriptable
+            boundsControl.BoxDisplayConfig = boxDisplayConfiguration;
+            yield return null;
+
+            // Make sure the new scriptable visuals have been applied to the object
+            Assert.AreEqual(GetBoxVisual(boundsControl).GetComponent<Renderer>().material.color, testMaterial.color);
+        }
+
+        // Returns the "box display" transform in the bounds control rig
+        private Transform GetBoxVisual(BoundsControl boundsControl)
+        {
+            GameObject rigRoot = boundsControl.transform.Find("rigRoot").gameObject;
+            Assert.IsNotNull(rigRoot, "rigRoot couldn't be found");
+
+            Transform boxVisual = rigRoot.transform.Find("box display");
+            Assert.IsNotNull(boxVisual, "box visual couldn't be found");
+
+            return boxVisual;
         }
 
         /// <summary>
