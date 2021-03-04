@@ -12,7 +12,7 @@ namespace Microsoft.MixedReality.Toolkit.Input
     /// Base Pointer class for pointers that exist in the scene as GameObjects.
     /// </summary>
     [DisallowMultipleComponent]
-    [HelpURL("https://microsoft.github.io/MixedRealityToolkit-Unity/Documentation/Input/Pointers.html")]
+    [HelpURL("https://docs.microsoft.com/windows/mixed-reality/mrtk-unity/features/input/pointers")]
     public abstract class BaseControllerPointer : ControllerPoseSynchronizer, IMixedRealityPointer
     {
         [SerializeField]
@@ -82,7 +82,8 @@ namespace Microsoft.MixedReality.Toolkit.Input
         {
             using (SetCursorPerfMarker.Auto())
             {
-                if (cursorInstance != null)
+                // Destroy the old cursor and replace it with the new one if a new cursor was provided
+                if (cursorInstance != null && newCursor != null)
                 {
                     DestroyCursorInstance();
                     cursorInstance = newCursor;
@@ -90,13 +91,15 @@ namespace Microsoft.MixedReality.Toolkit.Input
 
                 if (cursorInstance == null && cursorPrefab != null)
                 {
-                    cursorInstance = Instantiate(cursorPrefab, transform);
+                    // We spawn the cursor at the same level as this pointer by setting its parent to be the same as the pointer's
+                    // In the future, the pointer will not be responsible for instantiating the cursor, so we'll avoid making this assumption about the hierarchy
+                    cursorInstance = Instantiate(cursorPrefab, transform.parent);
                     isCursorInstantiatedFromPrefab = true;
                 }
 
                 if (cursorInstance != null)
                 {
-                    cursorInstance.name = $"{Handedness}_{name}_Cursor";
+                    cursorInstance.name = $"{name}_Cursor";
 
                     BaseCursor oldC = BaseCursor as BaseCursor;
                     if (oldC != null && enabled)
@@ -224,8 +227,14 @@ namespace Microsoft.MixedReality.Toolkit.Input
 
                 if (base.Controller != null && this != null)
                 {
-                    PointerName = gameObject.name;
+                    // Ensures that the basePointerName is only initialized once
+                    if(basePointerName == string.Empty)
+                    {
+                        basePointerName = gameObject.name;
+                    }
+                    PointerName = $"{Handedness}_{basePointerName}";
                     InputSourceParent = base.Controller.InputSource;
+                    SetCursor();
                 }
             }
         }
@@ -246,6 +255,7 @@ namespace Microsoft.MixedReality.Toolkit.Input
             }
         }
 
+        private string basePointerName = string.Empty;
         private string pointerName = string.Empty;
 
         /// <inheritdoc />

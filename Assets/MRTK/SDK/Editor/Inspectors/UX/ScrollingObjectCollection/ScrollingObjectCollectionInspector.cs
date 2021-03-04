@@ -72,7 +72,7 @@ namespace Microsoft.MixedReality.Toolkit.Editor
         private const string BackReleasePlaneDescription = "Back release Plane";
         private const string FrontReleasePlaneDescription = "Front Release Plane";
 
-        private const string ScrollViewDocURL = "https://microsoft.github.io/MixedRealityToolkit-Unity/Documentation/README_ScrollView.html";
+        private const string ScrollViewDocURL = "https://docs.microsoft.com/windows/mixed-reality/mrtk-unity/features/ux-building-blocks/scrolling-object-collection";
 
         protected const string ShowAdvancedPrefKey = "ScrollViewInspectorShowAdvanced";
         protected const string ShowEventsPrefKey = "ScrollViewInspectorShowEvents";
@@ -361,7 +361,7 @@ namespace Microsoft.MixedReality.Toolkit.Editor
         private void DrawTouchReleaseThresholdsSection()
         {
             Rect rect = EditorGUILayout.GetControlRect(true, EditorGUIUtility.singleLineHeight);
-            EditorGUI.PrefixLabel(rect, new GUIContent("Release threshold", "Withdraw amount, in meters, from the the scroll view boundaries that triggers a touch release."), EditorStyles.boldLabel);
+            EditorGUI.PrefixLabel(rect, new GUIContent("Release threshold", "Withdraw amount, in meters, from the scroll view boundaries that triggers a touch release."), EditorStyles.boldLabel);
 
             int oldIndent = EditorGUI.indentLevel;
             EditorGUI.indentLevel = 0;

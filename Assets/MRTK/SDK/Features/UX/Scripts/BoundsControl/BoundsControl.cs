@@ -18,7 +18,7 @@ namespace Microsoft.MixedReality.Toolkit.UI.BoundsControl
     /// Bounds Control provides scale and rotation handles that can be used for far and near interaction manipulation
     /// of the object. It further provides a proximity effect for scale and rotation handles that alters scaling and material. 
     /// </summary>
-    [HelpURL("https://microsoft.github.io/MixedRealityToolkit-Unity/Documentation/README_BoundsControl.html")]
+    [HelpURL("https://docs.microsoft.com/windows/mixed-reality/mrtk-unity/features/ux-building-blocks/bounds-control")]
     [RequireComponent(typeof(ConstraintManager))]
     [AddComponentMenu("Scripts/MRTK/SDK/BoundsControl")]
     public class BoundsControl : MonoBehaviour,
@@ -378,7 +378,7 @@ namespace Microsoft.MixedReality.Toolkit.UI.BoundsControl
             "changes will be post processed by the linked constraint manager.")]
         private bool enableConstraints = true;
         /// <summary>
-        /// nable or disable constraint support of this component. When enabled, transform
+        /// Enable or disable constraint support of this component. When enabled, transform
         /// changes will be post processed by the linked constraint manager.
         /// </summary>
         public bool EnableConstraints
@@ -784,7 +784,7 @@ namespace Microsoft.MixedReality.Toolkit.UI.BoundsControl
                 // also only use proximity effect if nothing is being dragged or grabbed
                 if (!wireframeOnly && currentPointer == null)
                 {
-                    proximityEffect.UpdateScaling(Vector3.Scale(TargetBounds.center, TargetBounds.gameObject.transform.lossyScale) + Target.transform.position, currentBoundsExtents);
+                    proximityEffect.UpdateScaling(TargetBounds.transform.TransformPoint(TargetBounds.center), currentBoundsExtents);
                 }
             }
         }
